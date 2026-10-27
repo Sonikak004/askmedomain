@@ -11,9 +11,17 @@ export interface DynadotClientConfig {
   mode: "production" | "sandbox";
 }
 
+export class UnsupportedTldError extends Error {
+  tld: string;
+  constructor(tld: string, message: string) {
+    super(message);
+    this.name = "UnsupportedTldError";
+    this.tld = tld;
+  }
+}
+
 /**
  * Returns server-side Dynadot credentials.
- * Throws if missing. Never exposed to browser.
  */
 export function getDynadotCredentials(): DynadotClientConfig {
   const apiKey = process.env.DYNADOT_API_KEY;
@@ -94,6 +102,16 @@ async function sendSingleRequest(
 export async function queryDynadotDomainSearch(domainName: string): Promise<DynadotSearchApiResponse> {
   const creds = getDynadotCredentials();
   const cleanDomain = domainName.trim().toLowerCase();
+  const ext = cleanDomain.includes(".") ? `.${cleanDomain.split(".").slice(1).join(".")}` : ".com";
+
+  // Known TLDs unsupported by Dynadot's reseller API
+  if (ext === ".in" || ext.endsWith(".in")) {
+    throw new UnsupportedTldError(
+      ext,
+      `The ${ext} extension is managed by the Indian registry (NIXI) and is not supported through Dynadot's reseller API.`
+    );
+  }
+
   const endpointPath = `/restful/v2/domains/${encodeURIComponent(
     cleanDomain
   )}/search?show_price=true&currency=INR`;
@@ -107,13 +125,22 @@ export async function queryDynadotDomainSearch(domainName: string): Promise<Dyna
         return response;
       }
 
-      // If Dynadot returns a 400 or 403 error code
-      if (response.error?.description) {
-        throw new Error(`Dynadot registrar error: ${response.error.description}`);
+      // Check specifically if Dynadot flagged this TLD as unsupported
+      const errorDesc = response.error?.description || "";
+      if (errorDesc.toLowerCase().includes("tld isn't supported")) {
+        throw new UnsupportedTldError(ext, `This TLD (${ext}) is not supported via the Dynadot API.`);
+      }
+
+      if (errorDesc) {
+        throw new Error(`Dynadot registrar error: ${errorDesc}`);
       }
 
       return response;
     } catch (err: any) {
+      if (err instanceof UnsupportedTldError) {
+        throw err; // Do not retry unsupported TLDs
+      }
+
       const isRetryable =
         err.code === "ECONNRESET" ||
         err.code === "ETIMEDOUT" ||

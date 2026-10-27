@@ -1,10 +1,10 @@
-import { queryDynadotDomainSearch } from "./client";
+import { queryDynadotDomainSearch, UnsupportedTldError } from "./client";
 import { processDynadotTierPricing } from "../pricing/markup";
 import { DomainSearchResult, DomainSearchResponse } from "@/types";
 
+// Extensions verified and supported by Dynadot RESTful v2
 export const SUPPORTED_EXTENSIONS = [
   ".com",
-  ".in",
   ".net",
   ".org",
   ".co",
@@ -13,6 +13,9 @@ export const SUPPORTED_EXTENSIONS = [
   ".online",
   ".xyz",
   ".site",
+  ".io",
+  ".biz",
+  ".info",
 ];
 
 export interface NormalizedDomainInput {
@@ -62,6 +65,7 @@ export function normalizeDomainInput(rawInput: string): NormalizedDomainInput {
 
 /**
  * Searches a single domain via Dynadot RESTful v2 and formats with markup.
+ * Handles unsupported TLDs (such as .in) cleanly without throwing fatal errors.
  */
 export async function searchSingleDomainDynadot(
   domainName: string
@@ -70,54 +74,74 @@ export async function searchSingleDomainDynadot(
   const sld = parts[0];
   const ext = `.${parts.slice(1).join(".")}`;
 
-  const dynadotRes = await queryDynadotDomainSearch(domainName);
-  const data = dynadotRes.data;
+  try {
+    const dynadotRes = await queryDynadotDomainSearch(domainName);
+    const data = dynadotRes.data;
 
-  if (!data) {
-    throw new Error(`No data returned by registrar for domain ${domainName}`);
+    if (!data) {
+      throw new Error(`No data returned by registrar for domain ${domainName}`);
+    }
+
+    const isAvailable = data.available?.toLowerCase() === "yes";
+    const isPremium = data.premium?.toLowerCase() === "yes";
+
+    let customerRegPrice = 860;
+    let customerRenewalPrice = 1099;
+    let customerTransferPrice = 860;
+    const currencySymbol = "₹";
+
+    const tier = data.price_list?.[0];
+    if (tier) {
+      const pricing = await processDynadotTierPricing(
+        tier.registration_price,
+        tier.renewal_price,
+        tier.transfer_price,
+        tier.currency || "INR",
+        isPremium
+      );
+
+      customerRegPrice = pricing.registration.customerSellingPriceINR;
+      customerRenewalPrice = pricing.renewal.customerSellingPriceINR;
+      customerTransferPrice = pricing.transfer
+        ? pricing.transfer.customerSellingPriceINR
+        : customerRegPrice;
+    }
+
+    return {
+      domain: domainName,
+      name: sld,
+      extension: ext,
+      available: isAvailable,
+      isPremium,
+      price: customerRegPrice,
+      renewalPrice: customerRenewalPrice,
+      currency: "INR",
+      currencySymbol,
+      period: "/year",
+      privacyIncluded: true,
+      recommendationReason: isAvailable
+        ? "Direct match confirmed via Dynadot registry"
+        : "Currently registered by another party",
+    };
+  } catch (err: unknown) {
+    if (err instanceof UnsupportedTldError) {
+      return {
+        domain: domainName,
+        name: sld,
+        extension: ext,
+        available: false,
+        isPremium: false,
+        price: 599,
+        renewalPrice: 799,
+        currency: "INR",
+        currencySymbol: "₹",
+        period: "/year",
+        privacyIncluded: false,
+        recommendationReason: `${err.message} Please consider supported alternatives like .com, .net, or .store.`,
+      };
+    }
+    throw err;
   }
-
-  const isAvailable = data.available?.toLowerCase() === "yes";
-  const isPremium = data.premium?.toLowerCase() === "yes";
-
-  let customerRegPrice = 860;
-  let customerRenewalPrice = 1099;
-  let customerTransferPrice = 860;
-  const currencySymbol = "₹";
-
-  const tier = data.price_list?.[0];
-  if (tier) {
-    const pricing = await processDynadotTierPricing(
-      tier.registration_price,
-      tier.renewal_price,
-      tier.transfer_price,
-      tier.currency || "INR",
-      isPremium
-    );
-
-    customerRegPrice = pricing.registration.customerSellingPriceINR;
-    customerRenewalPrice = pricing.renewal.customerSellingPriceINR;
-    customerTransferPrice = pricing.transfer
-      ? pricing.transfer.customerSellingPriceINR
-      : customerRegPrice;
-  }
-
-  return {
-    domain: domainName,
-    name: sld,
-    extension: ext,
-    available: isAvailable,
-    isPremium,
-    price: customerRegPrice,
-    renewalPrice: customerRenewalPrice,
-    currency: "INR",
-    currencySymbol,
-    period: "/year",
-    privacyIncluded: true,
-    recommendationReason: isAvailable
-      ? "Direct match confirmed via Dynadot registry"
-      : "Currently registered by another party",
-  };
 }
 
 /**
@@ -132,17 +156,16 @@ export async function executeComprehensiveDomainSearch(
   // 1. Search primary domain
   const exactMatch = await searchSingleDomainDynadot(primaryDomain);
 
-  // 2. Query alternative extensions
+  // 2. Query alternative extensions (only querying API-supported extensions)
   const targetExtensions = SUPPORTED_EXTENSIONS.filter(
     (ext) => ext !== `.${normalized.tld}`
-  ).slice(0, 5); // Pick top 5 alternatives to avoid rate limits
+  ).slice(0, 5); // Pick top 5 alternatives
 
   const alternativePromises = targetExtensions.map(async (ext) => {
     const candidateDomain = `${normalized.sld}${ext}`;
     try {
       return await searchSingleDomainDynadot(candidateDomain);
     } catch {
-      // If a single extension lookup fails or is unsupported by Dynadot
       return null;
     }
   });
