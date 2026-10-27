@@ -40,12 +40,15 @@ export async function GET(request: NextRequest) {
           searchLatencyMs: elapsed,
         });
       } catch (apiError: any) {
-        console.error("Live registry search error:", apiError?.message || apiError);
+        console.error("Live registry search failure after retries:", {
+          message: apiError?.message,
+          code: apiError?.code,
+          cause: apiError?.cause,
+          stack: apiError?.stack,
+        });
         return NextResponse.json(
           {
-            error:
-              apiError?.message ||
-              "Unable to verify domain availability from the central registry right now. Please try again.",
+            error: "We couldn’t check availability. Please try again.",
           },
           { status: 502 }
         );

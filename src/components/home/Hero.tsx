@@ -10,7 +10,10 @@ export const Hero: React.FC = () => {
   const [query, setQuery] = useState("");
   const [selectedTld, setSelectedTld] = useState(".com");
 
-  const heroTlds = POPULAR_TLDS.filter((tld) => tld.featuredHero);
+  const targetExtensions = [".com", ".in", ".net", ".org", ".store", ".tech"];
+  const heroTlds = targetExtensions
+    .map((ext) => POPULAR_TLDS.find((t) => t.extension === ext))
+    .filter((tld): tld is (typeof POPULAR_TLDS)[0] => Boolean(tld));
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,16 +39,14 @@ export const Hero: React.FC = () => {
   return (
     <section className="relative bg-gradient-to-b from-slate-50/80 via-white to-slate-50/50 pt-16 pb-20 sm:pt-24 sm:pb-28 border-b border-slate-200/80">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-        {/* Main Headline */}
+        {/* Main Headline from Redesign Brief */}
         <h1 className="text-4xl sm:text-6xl font-black text-slate-900 tracking-tight leading-[1.1] max-w-3xl mx-auto">
-          Find a domain.{" "}
-          <span className="text-[#0052FF]">Build something great.</span>
+          Your next idea starts with a domain.
         </h1>
 
         {/* Subheading */}
         <p className="mt-5 text-base sm:text-xl text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed">
-          Your perfect domain is just a search away. Find the right name for your business,
-          brand, or next big idea.
+          Search hundreds of domain extensions with transparent registry wholesale rates, free DNS management, and instant activation.
         </p>
 
         {/* Prominent High-Converting Search Box */}

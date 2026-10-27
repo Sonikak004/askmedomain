@@ -1,9 +1,21 @@
 import crypto from "crypto";
+import { Agent as UndiciAgent, fetch as undiciFetch } from "undici";
 import { DynadotSearchApiResponse } from "./types";
 
 const DYNADOT_BASE_URL = "https://api.dynadot.com";
 const DEFAULT_TIMEOUT_MS = 8000;
-const MAX_READ_ONLY_RETRIES = 2;
+const MAX_READ_ONLY_RETRIES = 2; // Up to 2 retries (3 total attempts)
+
+// Undici dispatcher configured specifically with non-persistent connections
+// to prevent stale socket reuse against Dynadot's edge load balancer
+const undiciDispatcher = new UndiciAgent({
+  keepAliveTimeout: 1,
+  keepAliveMaxTimeout: 1,
+  pipelining: 0,
+  connect: {
+    timeout: DEFAULT_TIMEOUT_MS,
+  },
+});
 
 export interface DynadotClientConfig {
   apiKey: string;
@@ -52,7 +64,32 @@ export function generateDynadotSignature(
 }
 
 /**
- * Low-level single attempt HTTPS fetch using non-persistent connection.
+ * Evaluates whether an error indicates an intermittent network / connection reset failure.
+ */
+export function isNetworkRetryableError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err?.code || err?.cause?.code || "");
+  const msg = (String(err?.message || "") + " " + String(err?.cause?.message || "")).toLowerCase();
+
+  return (
+    code === "ECONNRESET" ||
+    code === "ETIMEDOUT" ||
+    code === "ECONNREFUSED" ||
+    code === "EAI_AGAIN" ||
+    code === "UND_ERR_SOCKET" ||
+    code === "UND_ERR_CONNECT_TIMEOUT" ||
+    code === "UND_ERR_HEADERS_TIMEOUT" ||
+    msg.includes("econnreset") ||
+    msg.includes("fetch failed") ||
+    msg.includes("socket hang up") ||
+    msg.includes("connection reset") ||
+    msg.includes("abort") ||
+    msg.includes("network error")
+  );
+}
+
+/**
+ * Low-level single attempt HTTPS fetch using Undici dispatcher.
  */
 async function sendSingleRequest(
   endpointPath: string,
@@ -66,7 +103,7 @@ async function sendSingleRequest(
 
   try {
     const url = `${DYNADOT_BASE_URL}${endpointPath}`;
-    const response = await fetch(url, {
+    const response = await undiciFetch(url, {
       method: "GET",
       headers: {
         Accept: "application/json",
@@ -76,6 +113,8 @@ async function sendSingleRequest(
         "X-Request-ID": xRequestId,
         "X-Signature": signature,
       },
+      // Pass Undici dispatcher to explicitly control connection pooling and keep-alive
+      dispatcher: undiciDispatcher,
       signal: controller.signal,
       cache: "no-store",
     });
@@ -88,16 +127,18 @@ async function sendSingleRequest(
     clearTimeout(timeoutId);
     const message = err instanceof Error ? err.message : String(err);
     const isTimeout = err instanceof Error && err.name === "AbortError";
-    const code = isTimeout ? "ETIMEDOUT" : (err as any)?.cause?.code || "NETWORK_ERROR";
+    const code = isTimeout ? "ETIMEDOUT" : (err as any)?.cause?.code || (err as any)?.code || "NETWORK_ERROR";
 
-    const errorObj = new Error(`Dynadot API call failed [${code}]: ${message}`);
+    const errorObj = new Error(`Dynadot API request error [${code}]: ${message}`);
     (errorObj as any).code = code;
+    (errorObj as any).cause = (err as any)?.cause;
     throw errorObj;
   }
 }
 
 /**
- * Executes a read-only Dynadot RESTful v2 domain search with exponential backoff & jitter.
+ * Executes a read-only Dynadot RESTful v2 domain search with automatic retries (up to 2 retries)
+ * for ECONNRESET / network failures.
  */
 export async function queryDynadotDomainSearch(domainName: string): Promise<DynadotSearchApiResponse> {
   const creds = getDynadotCredentials();
@@ -107,6 +148,8 @@ export async function queryDynadotDomainSearch(domainName: string): Promise<Dyna
   const endpointPath = `/restful/v2/domains/${encodeURIComponent(
     cleanDomain
   )}/search?show_price=true&currency=INR`;
+
+  let lastError: any = null;
 
   for (let attempt = 0; attempt <= MAX_READ_ONLY_RETRIES; attempt++) {
     try {
@@ -119,7 +162,10 @@ export async function queryDynadotDomainSearch(domainName: string): Promise<Dyna
 
       // Check specifically if Dynadot flagged this TLD as unsupported via this API tier
       const errorDesc = response.error?.description || "";
-      if (errorDesc.toLowerCase().includes("tld isn't supported") || errorDesc.toLowerCase().includes("not supported via the api")) {
+      if (
+        errorDesc.toLowerCase().includes("tld isn't supported") ||
+        errorDesc.toLowerCase().includes("not supported via the api")
+      ) {
         throw new UnsupportedTldError(
           ext,
           `Automated API check is not enabled for ${ext} on this registrar API tier.`
@@ -132,25 +178,32 @@ export async function queryDynadotDomainSearch(domainName: string): Promise<Dyna
 
       return response;
     } catch (err: any) {
+      lastError = err;
+
+      // Do not retry permanent unsupported TLD or auth errors
       if (err instanceof UnsupportedTldError) {
-        throw err; // Do not retry unsupported TLDs
-      }
-
-      const isRetryable =
-        err.code === "ECONNRESET" ||
-        err.code === "ETIMEDOUT" ||
-        err.code === "ECONNREFUSED" ||
-        err.code === "EAI_AGAIN";
-
-      if (!isRetryable || attempt === MAX_READ_ONLY_RETRIES) {
         throw err;
       }
 
-      const jitter = Math.floor(Math.random() * 200);
-      const delay = Math.pow(2, attempt) * 400 + jitter;
+      const retryable = isNetworkRetryableError(err);
+      const isLastAttempt = attempt === MAX_READ_ONLY_RETRIES;
+
+      console.warn(
+        `[Dynadot API] Attempt ${attempt + 1}/${MAX_READ_ONLY_RETRIES + 1} for ${cleanDomain} failed: ${
+          err?.code || err?.message
+        } (retryable: ${retryable})`
+      );
+
+      if (!retryable || isLastAttempt) {
+        throw err;
+      }
+
+      // Exponential backoff with jitter: 200ms-400ms for attempt 1, 400ms-600ms for attempt 2
+      const jitter = Math.floor(Math.random() * 150);
+      const delay = (attempt + 1) * 200 + jitter;
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
 
-  throw new Error(`Exhausted retries while querying domain ${domainName}`);
+  throw lastError || new Error(`Exhausted retries while checking domain ${domainName}`);
 }

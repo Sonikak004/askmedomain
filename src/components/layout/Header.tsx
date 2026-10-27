@@ -14,8 +14,8 @@ export const Header: React.FC = () => {
 
   const navLinks = [
     { label: "Domains", href: "/domains" },
-    { label: "Pricing", href: "/pricing" },
-    { label: "Support", href: "/support" },
+    { label: "Websites", href: "/#websites" },
+    { label: "Help", href: "/support" },
   ];
 
   const isActive = (href: string) => {
@@ -50,38 +50,29 @@ export const Header: React.FC = () => {
           </nav>
 
           {/* Right Action Icons & Buttons */}
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-3">
+            {/* Account Link */}
+            <Link
+              href="/dashboard"
+              className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-[#0052FF] px-3.5 py-2 rounded-xl hover:bg-slate-50 transition-colors"
+            >
+              <User className="w-4 h-4 text-slate-500" />
+              <span>Account</span>
+            </Link>
+
             {/* Shopping Cart Button */}
             <Link
               href="/cart"
-              className="relative p-2.5 text-slate-700 hover:text-[#0052FF] hover:bg-slate-50 rounded-xl transition-all"
+              className="relative inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-sm transition-all"
               aria-label="Shopping Cart"
             >
-              <ShoppingCart className="w-5 h-5" />
+              <ShoppingCart className="w-4.5 h-4.5 text-slate-700" />
+              <span>Cart</span>
               {itemCount > 0 && (
-                <span className="absolute -top-1 -right-1 bg-[#FF5500] text-white text-[11px] font-bold h-5 min-w-5 px-1.5 rounded-full flex items-center justify-center shadow-xs animate-in zoom-in">
+                <span className="bg-[#FF5500] text-white text-[11px] font-black h-5 min-w-5 px-1.5 rounded-full flex items-center justify-center shadow-xs">
                   {itemCount}
                 </span>
               )}
-            </Link>
-
-            <div className="h-4 w-px bg-slate-200" />
-
-            {/* Login Link */}
-            <Link
-              href="/login"
-              className="flex items-center gap-1.5 text-sm font-semibold text-slate-700 hover:text-slate-900 px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors"
-            >
-              <User className="w-4 h-4 text-slate-500" />
-              <span>Login</span>
-            </Link>
-
-            {/* Sign Up Button */}
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center text-sm font-semibold text-white bg-[#0052FF] hover:bg-[#0043D6] px-4.5 py-2.5 rounded-xl shadow-xs transition-colors"
-            >
-              <span>Sign Up</span>
             </Link>
           </div>
 
@@ -135,27 +126,25 @@ export const Header: React.FC = () => {
             <Link
               href="/dashboard"
               onClick={() => setMobileMenuOpen(false)}
-              className="flex items-center justify-between px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-lg"
+              className="flex items-center justify-between px-3 py-2.5 text-base font-semibold text-slate-800 hover:bg-slate-50 rounded-lg"
             >
-              <span>DNS Management</span>
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-slate-500" />
+                <span>Account & DNS</span>
+              </div>
               <ArrowRight className="w-4 h-4 text-slate-400" />
             </Link>
-            <div className="grid grid-cols-2 gap-3 mt-1">
-              <Link
-                href="/login"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center text-sm font-semibold text-slate-700 border border-slate-200 py-2.5 rounded-xl hover:bg-slate-50"
-              >
-                Login
-              </Link>
-              <Link
-                href="/signup"
-                onClick={() => setMobileMenuOpen(false)}
-                className="flex items-center justify-center text-sm font-semibold text-white bg-[#0052FF] py-2.5 rounded-xl shadow-xs"
-              >
-                Sign Up
-              </Link>
-            </div>
+            <Link
+              href="/cart"
+              onClick={() => setMobileMenuOpen(false)}
+              className="flex items-center justify-between px-3 py-2.5 text-base font-semibold text-slate-800 hover:bg-slate-50 rounded-lg"
+            >
+              <div className="flex items-center gap-2">
+                <ShoppingCart className="w-4 h-4 text-slate-500" />
+                <span>Cart ({itemCount})</span>
+              </div>
+              <ArrowRight className="w-4 h-4 text-slate-400" />
+            </Link>
           </div>
         </div>
       )}
