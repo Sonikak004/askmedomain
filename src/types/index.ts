@@ -4,6 +4,7 @@ export interface DomainSearchResult {
   extension: string;
   available: boolean;
   isPremium?: boolean;
+  isUnsupported?: boolean;
   price: number;
   renewalPrice: number;
   currency: string;

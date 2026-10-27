@@ -11,13 +11,19 @@ import {
   XCircle,
   ShoppingCart,
   Check,
-  Shield,
   ArrowRight,
-  Sparkles,
   Info,
-  Loader2,
-  RefreshCw,
+  Clock,
+  AlertCircle,
+  Sparkles,
 } from "lucide-react";
+
+const LOADING_STATUS_MESSAGES = [
+  "Querying central domain registry...",
+  "Checking real-time availability...",
+  "Calculating live wholesale rates...",
+  "Finding available extension alternatives...",
+];
 
 function DomainSearchContent() {
   const searchParams = useSearchParams();
@@ -26,30 +32,60 @@ function DomainSearchContent() {
   const initialTld = searchParams.get("tld") || "";
 
   const [inputQuery, setInputQuery] = useState(
-    initialQuery || (initialTld ? `mybusiness${initialTld}` : "")
+    initialQuery || (initialTld ? `yourbrand${initialTld}` : "")
   );
   const [data, setData] = useState<DomainSearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentSearchingDomain, setCurrentSearchingDomain] = useState<string>("");
+  const [elapsedTime, setElapsedTime] = useState<number>(0);
+  const [statusMessageIndex, setStatusMessageIndex] = useState(0);
 
   const { addItem, isItemInCart } = useCart();
+
+  // Active elapsed timer during loading
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    let messageTimer: NodeJS.Timeout;
+
+    if (loading) {
+      setElapsedTime(0);
+      setStatusMessageIndex(0);
+      const start = Date.now();
+
+      timer = setInterval(() => {
+        setElapsedTime(Number(((Date.now() - start) / 1000).toFixed(1)));
+      }, 100);
+
+      messageTimer = setInterval(() => {
+        setStatusMessageIndex((prev) => (prev + 1) % LOADING_STATUS_MESSAGES.length);
+      }, 900);
+    }
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(messageTimer);
+    };
+  }, [loading]);
 
   const performSearch = async (searchTerm: string) => {
     if (!searchTerm.trim()) return;
 
+    const term = searchTerm.trim();
+    setCurrentSearchingDomain(term);
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/domains/search?domain=${encodeURIComponent(searchTerm.trim())}`);
+      const res = await fetch(`/api/domains/search?domain=${encodeURIComponent(term)}`);
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to search domain availability");
+        throw new Error(errorData.error || "Unable to check domain availability.");
       }
       const responseData: DomainSearchResponse = await res.json();
       setData(responseData);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.");
       setData(null);
     } finally {
       setLoading(false);
@@ -60,10 +96,9 @@ function DomainSearchContent() {
     if (initialQuery) {
       performSearch(initialQuery);
     } else if (initialTld) {
-      performSearch(`myidea${initialTld}`);
+      performSearch(`yourbrand${initialTld}`);
     } else {
-      // Default initial search
-      performSearch("mybrand.com");
+      performSearch("yourbrand.com");
     }
   }, [initialQuery, initialTld]);
 
@@ -75,55 +110,46 @@ function DomainSearchContent() {
   };
 
   return (
-    <div className="bg-slate-50 min-h-screen py-8 sm:py-12">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Search Header Bar */}
-        <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-xs border border-slate-200">
-          <form onSubmit={handleFormSubmit} className="flex flex-col sm:flex-row gap-3">
+    <div className="bg-slate-50/70 min-h-screen py-10 sm:py-14">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Prominent Search Bar */}
+        <div className="bg-white rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-200 mb-8">
+          <form onSubmit={handleFormSubmit} className="flex flex-col sm:flex-row gap-2">
             <div className="relative flex-1">
               <Search className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={inputQuery}
                 onChange={(e) => setInputQuery(e.target.value)}
-                placeholder="Search another domain (e.g. startupidea.in)"
-                className="w-full pl-11 pr-4 py-3 text-base text-slate-900 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0052FF]"
+                placeholder="Search for a domain (e.g. yourbrand.com)"
+                className="w-full pl-11 pr-4 py-3 text-base sm:text-lg text-slate-900 placeholder-slate-400 border border-slate-200 rounded-xl focus:outline-none focus:border-[#0052FF]"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-3 rounded-xl bg-[#FF5500] hover:bg-[#E54D00] text-white font-bold text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50 shrink-0"
+              className="px-7 py-3 rounded-xl bg-[#FF5500] hover:bg-[#E54D00] text-white font-bold text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 shrink-0"
             >
-              {loading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Checking...</span>
-                </>
-              ) : (
-                <>
-                  <span>Search</span>
-                  <Search className="w-4 h-4" />
-                </>
-              )}
+              <span>Search</span>
+              <Search className="w-4 h-4" />
             </button>
           </form>
 
-          {/* Quick TLD Pills */}
-          <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-slate-400 font-semibold">Quick search:</span>
-            {[".com", ".in", ".org", ".net", ".co", ".store", ".tech", ".ai"].map((ext) => (
+          {/* Quick Extension Chips */}
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-slate-400 font-semibold mr-1">Popular:</span>
+            {[".com", ".net", ".org", ".co", ".store", ".tech", ".online", ".in"].map((ext) => (
               <button
                 key={ext}
                 type="button"
                 onClick={() => {
-                  const base = (inputQuery.split(".")[0] || "mybrand").trim();
+                  const base = (inputQuery.split(".")[0] || "yourbrand").trim();
                   const newTerm = `${base}${ext}`;
                   setInputQuery(newTerm);
                   router.push(`/domains?q=${encodeURIComponent(newTerm)}`);
                   performSearch(newTerm);
                 }}
-                className="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-blue-50 hover:text-[#0052FF] text-slate-700 font-medium transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-md bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium border border-slate-200 transition-colors cursor-pointer"
               >
                 {ext}
               </button>
@@ -131,231 +157,260 @@ function DomainSearchContent() {
           </div>
         </div>
 
-        {/* Demo Mode / Registrar Architecture Banner */}
-        {data?.isDemoMode && (
-          <div className="mt-6 p-4 rounded-xl bg-blue-50/80 border border-blue-200/80 flex items-start gap-3">
-            <Info className="w-5 h-5 text-[#0052FF] shrink-0 mt-0.5" />
-            <div className="text-xs text-blue-950">
-              <span className="font-bold">Dynadot Registrar Integration Ready:</span>{" "}
-              {data.demoNotice}
-            </div>
-          </div>
-        )}
-
-        {/* Error Notification */}
-        {error && (
-          <div className="mt-6 p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-center gap-3">
-            <XCircle className="w-5 h-5 text-red-500 shrink-0" />
-            <span>{error}</span>
-          </div>
-        )}
-
-        {/* Loading Skeleton */}
+        {/* LOADING STATE (Immediate, within 100ms) */}
         {loading && (
-          <div className="mt-8 space-y-4">
-            <div className="bg-white rounded-2xl p-6 sm:p-8 border border-slate-200 shadow-xs animate-pulse">
-              <div className="h-6 bg-slate-200 rounded w-1/3 mb-4" />
-              <div className="h-4 bg-slate-100 rounded w-1/2" />
+          <div className="space-y-6 animate-in fade-in duration-150">
+            {/* Live Progress Banner */}
+            <div className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center justify-between gap-4 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-[#0052FF] animate-ping" />
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">
+                    Checking availability for{" "}
+                    <span className="text-[#0052FF] font-black">{currentSearchingDomain}</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 transition-all duration-200">
+                    {LOADING_STATUS_MESSAGES[statusMessageIndex]}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-mono font-bold shrink-0">
+                <Clock className="w-3.5 h-3.5 text-slate-400" />
+                <span>{elapsedTime.toFixed(1)}s</span>
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[1, 2, 3, 4].map((i) => (
-                <div key={i} className="bg-white rounded-xl p-5 border border-slate-200 animate-pulse">
-                  <div className="h-5 bg-slate-200 rounded w-1/2 mb-2" />
-                  <div className="h-4 bg-slate-100 rounded w-1/4" />
+
+            {/* Skeleton Primary Card matching eventual layout */}
+            <div className="bg-white rounded-3xl p-8 sm:p-10 border-2 border-slate-200 shadow-sm relative overflow-hidden">
+              <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-slate-100/70 to-transparent" />
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                <div className="space-y-3 w-full sm:w-2/3">
+                  <div className="w-32 h-6 bg-slate-200 rounded-full" />
+                  <div className="w-64 h-10 bg-slate-200 rounded-xl" />
+                  <div className="w-48 h-4 bg-slate-100 rounded" />
+                </div>
+                <div className="space-y-2 w-full sm:w-1/3 flex flex-col sm:items-end">
+                  <div className="w-36 h-10 bg-slate-200 rounded-xl" />
+                  <div className="w-28 h-4 bg-slate-100 rounded" />
+                  <div className="w-36 h-12 bg-slate-200 rounded-xl mt-2" />
+                </div>
+              </div>
+            </div>
+
+            {/* Skeleton Alternative Cards */}
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="bg-white rounded-2xl p-5 border border-slate-200 flex items-center justify-between relative overflow-hidden"
+                >
+                  <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-slate-50 to-transparent" />
+                  <div className="w-40 h-6 bg-slate-200 rounded" />
+                  <div className="w-24 h-8 bg-slate-200 rounded-xl" />
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Search Results Display */}
+        {/* Error Notice */}
+        {!loading && error && (
+          <div className="bg-white rounded-2xl p-6 sm:p-8 border border-red-200 shadow-xs text-center space-y-4">
+            <div className="w-12 h-12 rounded-xl bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Registry Search Error</h3>
+              <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">{error}</p>
+            </div>
+            <button
+              onClick={() => performSearch(inputQuery || "yourbrand.com")}
+              className="px-5 py-2.5 rounded-xl bg-[#0052FF] text-white font-bold text-xs"
+            >
+              Try Search Again
+            </button>
+          </div>
+        )}
+
+        {/* COMPLETED RESULTS DISPLAY */}
         {!loading && data && (
-          <div className="mt-8 space-y-8">
-            {/* 1. Exact Match Card */}
+          <div className="space-y-8 animate-in fade-in duration-200">
+            {/* 1. PRIMARY RESULT HERO CARD (Designed to Sell) */}
             <div
-              className={`rounded-2xl p-6 sm:p-8 border transition-all bg-white shadow-xs ${
+              className={`bg-white rounded-3xl p-7 sm:p-10 border-2 transition-all shadow-sm ${
                 data.exactMatch.available
-                  ? "border-emerald-300 ring-2 ring-emerald-500/10"
+                  ? "border-emerald-400 ring-4 ring-emerald-500/10"
+                  : data.exactMatch.isUnsupported
+                  ? "border-amber-300 ring-4 ring-amber-500/10"
                   : "border-slate-200"
               }`}
             >
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                <div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
-                      {data.exactMatch.domain}
-                    </span>
-                    {data.exactMatch.available ? (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>Available Now</span>
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                        <XCircle className="w-4 h-4 text-rose-600" />
-                        <span>Already Registered</span>
-                      </span>
-                    )}
+                {/* Left Side: Status & Big Domain Name */}
+                <div className="space-y-3">
+                  {data.exactMatch.available ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wide uppercase bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>Domain Available</span>
+                    </div>
+                  ) : data.exactMatch.isUnsupported ? (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase bg-amber-50 text-amber-800 border border-amber-200">
+                      <AlertCircle className="w-4 h-4 text-amber-600" />
+                      <span>Automated Check Unavailable</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold tracking-wide uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                      <XCircle className="w-4 h-4 text-slate-500" />
+                      <span>Already Registered</span>
+                    </div>
+                  )}
 
-                    {data.exactMatch.isPremium && (
-                      <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                        Short / Premium TLD
-                      </span>
-                    )}
-                  </div>
+                  <h2 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight break-all">
+                    {data.exactMatch.domain}
+                  </h2>
 
-                  <p className="mt-2 text-sm text-slate-500">
-                    {data.exactMatch.available
-                      ? "Congratulations! This domain is available to register right now."
-                      : "This exact name is taken. Check out recommended alternatives below."}
+                  <p className="text-xs sm:text-sm text-slate-500">
+                    {data.exactMatch.recommendationReason ||
+                      (data.exactMatch.available
+                        ? "Verified available for instant registration."
+                        : data.exactMatch.isUnsupported
+                        ? "Automated verification is not currently enabled for this extension on our API tier."
+                        : "This domain is currently owned by someone else.")}
                   </p>
-
-                  <div className="mt-3 flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1 text-emerald-600 font-semibold">
-                      <Shield className="w-3.5 h-3.5" />
-                      Free WHOIS Privacy Protection
-                    </span>
-                    <span>•</span>
-                    <span>Instant DNS setup</span>
-                  </div>
                 </div>
 
-                {/* Pricing & Add to Cart button */}
+                {/* Right Side: Big Bold Price & Action Button */}
                 {data.exactMatch.available ? (
-                  <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end gap-3 pt-4 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                  <div className="flex flex-col sm:flex-row lg:flex-col items-start sm:items-center lg:items-end justify-between gap-4 pt-4 lg:pt-0 border-t lg:border-t-0 border-slate-100">
                     <div className="text-left lg:text-right">
-                      <div className="text-3xl font-black text-slate-900">
+                      <div className="text-4xl sm:text-5xl font-black text-slate-900 tracking-tight">
                         {data.exactMatch.currencySymbol}
                         {data.exactMatch.price.toLocaleString("en-IN")}
-                        <span className="text-xs font-medium text-slate-500">
-                          {data.exactMatch.period}
-                        </span>
                       </div>
-                      <div className="text-xs text-slate-400">
-                        Renews at {data.exactMatch.currencySymbol}
-                        {data.exactMatch.renewalPrice.toLocaleString("en-IN")}/yr
+                      <div className="mt-1 text-xs text-slate-500 font-medium">
+                        First year · Renews at {data.exactMatch.currencySymbol}
+                        {data.exactMatch.renewalPrice.toLocaleString("en-IN")}/yr · Plus taxes
                       </div>
                     </div>
 
                     {isItemInCart(data.exactMatch.domain) ? (
                       <Link
                         href="/cart"
-                        className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shadow-xs flex items-center gap-2 transition-colors cursor-pointer"
+                        className="w-full sm:w-auto px-8 py-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-base shadow-sm flex items-center justify-center gap-2 transition-colors cursor-pointer shrink-0"
                       >
-                        <Check className="w-4 h-4" />
-                        <span>In Cart – View Checkout</span>
+                        <Check className="w-5 h-5" />
+                        <span>In Cart – Checkout</span>
                       </Link>
                     ) : (
                       <button
                         type="button"
                         onClick={() => addItem(data.exactMatch)}
-                        className="px-6 py-3 rounded-xl bg-[#0052FF] hover:bg-[#0043D6] text-white font-bold text-sm shadow-xs flex items-center gap-2 transition-colors cursor-pointer"
+                        className="w-full sm:w-auto px-8 py-4 rounded-xl bg-[#FF5500] hover:bg-[#E54D00] text-white font-black text-base shadow-md shadow-orange-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0"
                       >
-                        <ShoppingCart className="w-4 h-4" />
+                        <ShoppingCart className="w-5 h-5" />
                         <span>Add to Cart</span>
                       </button>
                     )}
                   </div>
-                ) : (
-                  <div className="flex items-center gap-2">
+                ) : data.exactMatch.isUnsupported ? (
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 pt-2 lg:pt-0">
                     <Link
-                      href={`/support?query=transfer_${encodeURIComponent(data.exactMatch.domain)}`}
-                      className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 font-semibold text-xs"
+                      href="/support"
+                      className="px-6 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs flex items-center gap-2 transition-colors cursor-pointer shrink-0"
                     >
-                      Check Transfer Status
+                      <Info className="w-4 h-4 text-amber-400" />
+                      <span>Contact Domain Desk</span>
                     </Link>
+                  </div>
+                ) : (
+                  <div className="flex items-center pt-2 lg:pt-0">
+                    <span className="text-xs font-semibold text-slate-400">
+                      Check available matching extensions below
+                    </span>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* 2. Alternative Extensions & Suggestions */}
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#FF5500]" />
-                  <h3 className="text-lg font-bold text-slate-900">
-                    Recommended Available Alternatives
+            {/* 2. ALTERNATIVES LIST (Clean & Scannable) */}
+            {data.alternatives.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between px-1">
+                  <h3 className="text-base font-bold text-slate-900">
+                    More Extensions for &ldquo;{data.exactMatch.name}&rdquo;
                   </h3>
+                  <span className="text-xs text-slate-400">
+                    Verified availability via Dynadot API
+                  </span>
                 </div>
-                <span className="text-xs text-slate-500">
-                  {data.alternatives.length} matching ideas found
-                </span>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {data.alternatives.map((alt) => {
-                  const inCart = isItemInCart(alt.domain);
-                  return (
-                    <div
-                      key={alt.domain}
-                      className="bg-white rounded-xl p-5 border border-slate-200/90 shadow-2xs hover:border-blue-300 hover:shadow-xs transition-all flex items-center justify-between gap-4"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-slate-900 text-base truncate">
+                <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden shadow-xs">
+                  {data.alternatives.map((alt) => {
+                    const inCart = isItemInCart(alt.domain);
+                    return (
+                      <div
+                        key={alt.domain}
+                        className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/60 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="font-extrabold text-slate-900 text-lg">
                             {alt.domain}
                           </span>
-                          <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 shrink-0">
-                            Available
-                          </span>
+                          {alt.available ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                              Available
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600">
+                              Registered
+                            </span>
+                          )}
                         </div>
-                        {alt.recommendationReason && (
-                          <p className="text-xs text-slate-400 mt-0.5 truncate">
-                            {alt.recommendationReason}
-                          </p>
-                        )}
-                        <div className="mt-1 text-xs text-slate-600">
-                          <span className="font-bold text-slate-900">
-                            {alt.currencySymbol}
-                            {alt.price.toLocaleString("en-IN")}
-                          </span>{" "}
-                          <span className="text-slate-400">{alt.period}</span>
+
+                        <div className="flex items-center justify-between sm:justify-end gap-5">
+                          {alt.available && (
+                            <div className="text-right">
+                              <span className="text-lg font-black text-slate-900">
+                                {alt.currencySymbol}
+                                {alt.price.toLocaleString("en-IN")}
+                              </span>
+                              <span className="text-xs text-slate-400 font-normal">
+                                {" "}
+                                {alt.period}
+                              </span>
+                            </div>
+                          )}
+
+                          {alt.available ? (
+                            inCart ? (
+                              <Link
+                                href="/cart"
+                                className="px-4 py-2 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1.5 hover:bg-emerald-100 transition-colors"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>In Cart</span>
+                              </Link>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => addItem(alt)}
+                                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-[#0052FF] hover:text-white text-slate-800 font-bold text-xs transition-colors cursor-pointer"
+                              >
+                                Add to Cart
+                              </button>
+                            )
+                          ) : (
+                            <span className="text-xs text-slate-400 font-medium">
+                              Unavailable
+                            </span>
+                          )}
                         </div>
                       </div>
-
-                      <div className="shrink-0">
-                        {inCart ? (
-                          <Link
-                            href="/cart"
-                            className="px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-xs flex items-center gap-1 hover:bg-emerald-100 transition-colors"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>In Cart</span>
-                          </Link>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => addItem(alt)}
-                            className="px-3.5 py-2 rounded-lg bg-slate-100 hover:bg-[#0052FF] hover:text-white text-slate-800 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <ShoppingCart className="w-3.5 h-3.5" />
-                            <span>Select</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-
-            {/* Bottom Checkout CTA Callout */}
-            <div className="p-6 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-900 text-white flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <h4 className="font-bold text-lg">Ready to register your selected names?</h4>
-                <p className="text-xs text-blue-200 mt-0.5">
-                  Secure checkout with instant digital provisioning and 24/7 technical support.
-                </p>
-              </div>
-              <Link
-                href="/cart"
-                className="px-6 py-3 rounded-xl bg-[#FF5500] hover:bg-[#E54D00] text-white font-bold text-sm shadow-md flex items-center gap-2 shrink-0 transition-colors"
-              >
-                <span>Proceed to Cart</span>
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-            </div>
+            )}
           </div>
         )}
       </div>
@@ -368,7 +423,7 @@ export default function DomainsPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-8">
-          <Loader2 className="w-8 h-8 text-[#0052FF] animate-spin" />
+          <div className="w-8 h-8 rounded-full border-2 border-[#0052FF] border-t-transparent animate-spin" />
         </div>
       }
     >

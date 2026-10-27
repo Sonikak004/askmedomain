@@ -104,14 +104,6 @@ export async function queryDynadotDomainSearch(domainName: string): Promise<Dyna
   const cleanDomain = domainName.trim().toLowerCase();
   const ext = cleanDomain.includes(".") ? `.${cleanDomain.split(".").slice(1).join(".")}` : ".com";
 
-  // Known TLDs unsupported by Dynadot's reseller API
-  if (ext === ".in" || ext.endsWith(".in")) {
-    throw new UnsupportedTldError(
-      ext,
-      `The ${ext} extension is managed by the Indian registry (NIXI) and is not supported through Dynadot's reseller API.`
-    );
-  }
-
   const endpointPath = `/restful/v2/domains/${encodeURIComponent(
     cleanDomain
   )}/search?show_price=true&currency=INR`;
@@ -125,10 +117,13 @@ export async function queryDynadotDomainSearch(domainName: string): Promise<Dyna
         return response;
       }
 
-      // Check specifically if Dynadot flagged this TLD as unsupported
+      // Check specifically if Dynadot flagged this TLD as unsupported via this API tier
       const errorDesc = response.error?.description || "";
-      if (errorDesc.toLowerCase().includes("tld isn't supported")) {
-        throw new UnsupportedTldError(ext, `This TLD (${ext}) is not supported via the Dynadot API.`);
+      if (errorDesc.toLowerCase().includes("tld isn't supported") || errorDesc.toLowerCase().includes("not supported via the api")) {
+        throw new UnsupportedTldError(
+          ext,
+          `Automated API check is not enabled for ${ext} on this registrar API tier.`
+        );
       }
 
       if (errorDesc) {
