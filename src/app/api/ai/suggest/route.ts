@@ -126,7 +126,7 @@ function generateSemanticIdeas(prompt: string): AiDomainIdea[] {
  * Calls Google Gemini free tier API when GEMINI_API_KEY is available.
  */
 async function callGeminiApi(prompt: string, apiKey: string): Promise<AiDomainIdea[] | null> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const modelsToTry = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"];
 
   const systemInstruction = `You are an elite domain name branding consultant.
 Generate 8 creative, brandable, and memorable domain names for the business idea or concept described.
@@ -143,61 +143,64 @@ You MUST respond strictly with valid JSON conforming to this schema (no markdown
   }
 ]`;
 
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 7000);
+  for (const model of modelsToTry) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 7000);
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: `${systemInstruction}\n\nBusiness Idea: "${prompt}"` },
-            ],
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                { text: `${systemInstruction}\n\nBusiness Idea: "${prompt}"` },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 800,
           },
-        ],
-        generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 800,
-        },
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      console.warn("Gemini API call failed with status", res.status);
-      return null;
-    }
-
-    const data = await res.json();
-    const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textOutput) return null;
-
-    // Clean any accidental markdown backticks
-    const cleanedJson = textOutput.replace(/```json/gi, "").replace(/```/g, "").trim();
-    const parsed = JSON.parse(cleanedJson);
-
-    if (Array.isArray(parsed)) {
-      return parsed.slice(0, 8).map((item: any) => {
-        const ext = item.extension?.startsWith(".") ? item.extension : `.${item.extension || "com"}`;
-        const { price, symbol } = getPriceForExt(ext);
-        return {
-          domain: item.domain || `${item.name}${ext}`,
-          name: item.name || item.domain.split(".")[0],
-          extension: ext,
-          tagline: item.tagline || "Brandable domain recommendation",
-          category: item.category || "AI Curated",
-          price,
-          currencySymbol: symbol,
-        };
+        }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeout);
+
+      if (!res.ok) {
+        console.warn(`Gemini API call to ${model} returned status`, res.status);
+        continue;
+      }
+
+      const data = await res.json();
+      const textOutput = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!textOutput) continue;
+
+      // Clean any accidental markdown backticks
+      const cleanedJson = textOutput.replace(/```json/gi, "").replace(/```/g, "").trim();
+      const parsed = JSON.parse(cleanedJson);
+
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.slice(0, 8).map((item: any) => {
+          const ext = item.extension?.startsWith(".") ? item.extension : `.${item.extension || "com"}`;
+          const { price, symbol } = getPriceForExt(ext);
+          return {
+            domain: item.domain || `${item.name}${ext}`,
+            name: item.name || item.domain.split(".")[0],
+            extension: ext,
+            tagline: item.tagline || "Brandable domain recommendation",
+            category: item.category || "AI Curated",
+            price,
+            currencySymbol: symbol,
+          };
+        });
+      }
+    } catch (err) {
+      console.warn(`Error calling Gemini API (${model}):`, err);
     }
-  } catch (err) {
-    console.warn("Error calling or parsing Gemini API response:", err);
   }
 
   return null;
