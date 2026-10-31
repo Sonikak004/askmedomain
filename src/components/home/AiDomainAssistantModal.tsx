@@ -27,9 +27,21 @@ export const AiDomainAssistantModal: React.FC<AiDomainAssistantModalProps> = ({
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [ideas, setIdeas] = useState<AiDomainIdea[]>([]);
   const [source, setSource] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (loading) {
+      setLoadingStep(0);
+      interval = setInterval(() => {
+        setLoadingStep((prev) => (prev + 1) % 3);
+      }, 1200);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   if (!isOpen) return null;
 
@@ -155,13 +167,35 @@ export const AiDomainAssistantModal: React.FC<AiDomainAssistantModalProps> = ({
               <button
                 key={ex}
                 type="button"
+                disabled={loading}
                 onClick={() => handleGenerate(ex)}
-                className="px-2.5 py-1 rounded-lg text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg text-xs bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 transition-colors cursor-pointer disabled:opacity-50"
               >
                 {ex}
               </button>
             ))}
           </div>
+
+          {/* Active Loading Progress Banner */}
+          {loading && (
+            <div className="p-4 rounded-2xl bg-blue-50/70 border border-blue-100 flex items-center gap-3 animate-in fade-in duration-200">
+              <div className="w-5 h-5 rounded-full border-2 border-[#0052FF] border-t-transparent animate-spin shrink-0" />
+              <div>
+                <p className="text-xs font-bold text-slate-900">
+                  {
+                    [
+                      "Brainstorming high-impact, brandable domain names...",
+                      "Consulting Google Gemini naming models...",
+                      "Matching verified extension wholesale pricing...",
+                    ][loadingStep]
+                  }
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Crafting memorable names for &ldquo;{prompt}&rdquo;
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (
