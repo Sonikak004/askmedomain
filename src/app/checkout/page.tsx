@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Script from "next/script";
 import { useCart } from "@/context/CartContext";
 import { CustomerBillingDetails, RegistrantContactDetails, PaymentMethod } from "@/types";
 import {
@@ -160,24 +161,88 @@ export default function CheckoutPage() {
         console.error("Storage save failed:", err);
       }
 
-      // Clear cart
-      clearCart();
-
       // Route based on payment choice
-      if (paymentMethod === "sandbox") {
+      if (paymentMethod === "cashfree") {
+        const cfResponse = await fetch("/api/payments/cashfree/create-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items,
+            total,
+            customer,
+            registrant: orderPayload.registrant,
+          }),
+        });
+
+        const cfData = await cfResponse.json();
+
+        if (!cfResponse.ok || !cfData.paymentSessionId) {
+          throw new Error(
+            cfData.error ||
+              "Failed to initialize Cashfree payment. Please verify your CASHFREE_APP_ID and CASHFREE_SECRET_KEY in .env.local."
+          );
+        }
+
+        // Store Cashfree order ID reference
+        const cfUpdatedOrder = {
+          ...orderPayload,
+          id: cfData.orderId,
+          orderNumber: cfData.orderId,
+          cfOrderId: cfData.cfOrderId,
+          paymentSessionId: cfData.paymentSessionId,
+        };
+
+        try {
+          const existingOrders = JSON.parse(
+            localStorage.getItem("askmedomain_orders") || "[]"
+          );
+          existingOrders.unshift(cfUpdatedOrder);
+          localStorage.setItem("askmedomain_orders", JSON.stringify(existingOrders));
+        } catch (e) {
+          console.error("Failed to store Cashfree order:", e);
+        }
+
+        clearCart();
+
+        // Check if Cashfree SDK is loaded
+        if (typeof (window as any).Cashfree === "undefined") {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Failed to load Cashfree payment SDK"));
+            document.body.appendChild(script);
+          });
+        }
+
+        const cashfree = (window as any).Cashfree({
+          mode: cfData.environment === "production" ? "production" : "sandbox",
+        });
+
+        await cashfree.checkout({
+          paymentSessionId: cfData.paymentSessionId,
+          redirectTarget: "_self",
+        });
+        return;
+      } else if (paymentMethod === "sandbox") {
+        clearCart();
         router.push(`/order-confirmation/${orderId}?status=success`);
       } else {
+        clearCart();
         // Pending status for real gateway keys until configured
         router.push(`/order-status?status=pending&orderId=${orderId}&method=${paymentMethod}`);
       }
-    } catch {
-      setErrorMessage("An unexpected error occurred during checkout. Please try again.");
+    } catch (err: any) {
+      setErrorMessage(
+        err?.message || "An unexpected error occurred during checkout. Please try again."
+      );
       setIsProcessing(false);
     }
   };
 
   return (
     <div className="bg-slate-50 min-h-screen py-10 sm:py-14">
+      <Script src="https://sdk.cashfree.com/js/v3/cashfree.js" strategy="lazyOnload" />
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-8">
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -535,14 +600,14 @@ export default function CheckoutPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-slate-900 text-sm">
-                              Cashfree Payments (UPI Instant, Cards)
+                              Cashfree Payments (UPI, Cards, NetBanking)
                             </span>
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600">
-                              Pre-activation
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-[#0052FF]">
+                              Direct Gateway
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 mt-1">
-                            High-success direct UPI and cards gateway architecture.
+                            Google Pay, PhonePe, Paytm, BHIM UPI, RuPay, Visa, Mastercard, NetBanking.
                           </p>
                         </div>
                       </div>
