@@ -40,7 +40,19 @@ export async function POST(request: NextRequest) {
       request.headers.get("origin") ||
       request.headers.get("referer") ||
       "http://localhost:3000";
-    const baseUrl = origin.replace(/\/$/, "");
+    let baseUrl = origin.replace(/\/$/, "");
+
+    const creds = getCashfreeCredentials();
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+
+    // Cashfree Production strictly requires HTTPS return_url
+    if (creds.isProduction) {
+      if (appUrl && appUrl.startsWith("https://")) {
+        baseUrl = appUrl.replace(/\/$/, "");
+      } else if (baseUrl.startsWith("http://localhost") || !baseUrl.startsWith("https://")) {
+        baseUrl = "https://askmedomain.com";
+      }
+    }
 
     const returnUrl = `${baseUrl}/api/payments/cashfree/verify?order_id={order_id}`;
 
@@ -57,8 +69,6 @@ export async function POST(request: NextRequest) {
       returnUrl,
       note: `Domain Registration (${items.length} domains) - AskMeDomain`,
     });
-
-    const creds = getCashfreeCredentials();
 
     return NextResponse.json({
       success: true,
